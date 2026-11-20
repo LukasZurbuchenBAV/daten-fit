@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="de-CH">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Daten-Fit – Datenmanagement-Quiz</title>
+<style>
+  :root{--bg:#f4f6f8;--card:#fff;--ink:#1d2733;--mute:#5d6b7a;--accent:#c4122f;--ok:#1f8a4c;--ko:#c4122f;--line:#dde3ea;--soft:#fbe9ec}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);line-height:1.45}
+  header{background:var(--card);border-bottom:4px solid var(--accent);padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+  header h1{margin:0;font-size:1.3rem}
+  header small{color:var(--mute)}
+  .score{font-weight:700;background:var(--soft);color:var(--accent);padding:6px 12px;border-radius:20px;white-space:nowrap}
+  main{max-width:820px;margin:0 auto;padding:18px}
+  .card{background:var(--card);border-radius:12px;padding:18px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  h2{margin:0 0 10px;font-size:1.15rem}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
+  .phase{border:1px solid var(--line);border-radius:10px;padding:12px;cursor:pointer;background:var(--card);text-align:left;font:inherit;color:inherit}
+  .phase:hover{border-color:var(--accent)}
+  .phase .t{font-weight:600}
+  .bar{height:8px;background:var(--line);border-radius:4px;margin:8px 0 4px;overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--accent)}
+  .lvl{font-size:.82rem;color:var(--mute)}
+  button.btn{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:10px 16px;font:inherit;font-weight:600;cursor:pointer}
+  button.btn.sec{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+  button.btn:disabled{opacity:.4;cursor:default}
+  .opts{display:flex;flex-direction:column;gap:8px;margin:14px 0}
+  .opt{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:8px;padding:10px 12px;cursor:pointer}
+  .opt input{margin-top:4px}
+  .opt.ok{border-color:var(--ok);background:#e8f5ee}
+  .opt.ko{border-color:var(--ko);background:var(--soft)}
+  .fb{border-left:4px solid var(--ok);padding:10px 12px;background:#f3f8f5;border-radius:6px;margin:10px 0}
+  .fb.bad{border-color:var(--ko);background:#fdf3f5}
+  .tool{display:inline-block;margin-top:6px;font-size:.88rem}
+  .tool.wip{color:var(--mute)}
+  .meta{display:flex;justify-content:space-between;color:var(--mute);font-size:.88rem}
+  .badges{display:flex;flex-wrap:wrap;gap:8px}
+  .badge{border:1px solid var(--line);border-radius:20px;padding:4px 10px;font-size:.88rem;opacity:.35}
+  .badge.on{opacity:1;border-color:var(--accent);background:var(--soft)}
+  .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+  .tree-res{font-size:1.05rem;font-weight:600;margin:10px 0}
+  .path{color:var(--mute);font-size:.85rem;margin-bottom:8px}
+  footer{text-align:center;color:var(--mute);font-size:.8rem;padding:20px}
+</style>
+</head>
+<body>
+<header>
+  <div><h1 id="titel">Daten-Fit</h1><small id="untertitel"></small></div>
+  <div class="score" id="score">0 Punkte</div>
+</header>
+<main id="app"></main>
+<footer>Datenmanagement-Community · Fragen ergänzen in <code>fragen.js</code></footer>
+
+<script src="fragen.js"></script>
+<script>
+(() => {
+  const Q = window.QUIZ, app = document.getElementById('app');
+  const RUNDE = 5;
+  const STUFEN = ["1 · Initial", "2 · Wiederholbar", "3 · Definiert", "4 · Gesteuert", "5 · Optimiert"];
+  const KEY = 'dm-quiz-v1';
+
+  // ---- Fortschritt (lokal im Browser) ----
+  let S = { punkte: 0, geloest: {} };   // geloest[frageId] = true wenn je richtig beantwortet
+  try { S = Object.assign(S, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch(e) {}
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e) {} };
+
+  document.getElementById('titel').textContent = Q.titel;
+  document.getElementById('untertitel').textContent = Q.untertitel;
+  const setScore = () => document.getElementById('score').textContent = S.punkte + ' Punkte';
+
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const fragenVon = pid => Q.fragen.filter(f => pid === 'mix' || f.phase === pid);
+  const anteil = pid => { const f = fragenVon(pid); return f.length ? f.filter(x => S.geloest[x.id]).length / f.length : 0; };
+  const stufe = a => STUFEN[Math.min(4, Math.floor(a * 5))];
+  const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+
+  // ---- Startseite ----
+  function home() {
+    setScore();
+    const gesamt = anteil('mix');
+    let h = `<div class="card"><h2>Dein Daten-Reifegrad</h2>
+      <div class="bar"><i style="width:${gesamt*100}%"></i></div>
+      <div class="lvl">Gesamt: Stufe ${stufe(gesamt)} · ${Math.round(gesamt*100)} % der Fragen gemeistert</div>
+      <div class="row"><button class="btn" data-go="mix">🎲 Mix-Runde starten</button></div></div>
+      <div class="card"><h2>Phasen des Datenlebenszyklus</h2><div class="grid">`;
+    Q.phasen.forEach(p => {
+      const a = anteil(p.id), n = fragenVon(p.id).length;
+      h += `<button class="phase" data-go="${p.id}"><div class="t">${p.icon} ${esc(p.nr)}. ${esc(p.titel)}</div>
+        <div class="bar"><i style="width:${a*100}%"></i></div>
+        <div class="lvl">Stufe ${stufe(a)} · ${n} Fragen</div></button>`;
+    });
+    h += `</div></div>`;
+    if (Q.baeume && Q.baeume.length) {
+      h += `<div class="card"><h2>🧭 Hilfsmittel zum Durchklicken</h2><div class="grid">`;
+      Q.baeume.forEach(b => h += `<button class="phase" data-tree="${b.id}"><div class="t">${esc(b.titel)}</div><div class="lvl">Entscheidungsbaum</div></button>`);
+      h += `</div></div>`;
+    }
+    h += `<div class="card"><h2>🏅 Abzeichen</h2><div class="badges">`;
+    Q.phasen.forEach(p => h += `<span class="badge ${anteil(p.id) === 1 ? 'on' : ''}">${p.icon} ${esc(p.titel)}</span>`);
+    h += `<span class="badge ${gesamt === 1 ? 'on' : ''}">🏆 Data Champion</span></div>
+      <div class="row"><button class="btn sec" id="reset">Fortschritt zurücksetzen</button></div></div>`;
+    app.innerHTML = h;
+    app.querySelectorAll('[data-go]').forEach(b => b.onclick = () => runde(b.dataset.go));
+    app.querySelectorAll('[data-tree]').forEach(b => b.onclick = () => baum(b.dataset.tree));
+    document.getElementById('reset').onclick = () => { if (confirmReset()) { S = { punkte: 0, geloest: {} }; save(); home(); } };
+  }
+  // Inline-Bestätigung statt Browser-Dialog
+  let resetArmed = false;
+  function confirmReset() {
+    if (resetArmed) { resetArmed = false; return true; }
+    resetArmed = true; document.getElementById('reset').textContent = 'Wirklich? Nochmals klicken';
+    setTimeout(() => resetArmed = false, 4000); return false;
+  }
+
+  // ---- Quizrunde ----
+  function runde(pid) {
+    const pool = fragenVon(pid);
+    // Ungelöste Fragen zuerst, dann Rest
+    const fragen = [...shuffle(pool.filter(f => !S.geloest[f.id])), ...shuffle(pool.filter(f => S.geloest[f.id]))].slice(0, RUNDE);
+    const st = { i: 0, richtig: 0, serie: 0, punkte: 0 };
+    const titel = pid === 'mix' ? '🎲 Mix-Runde' : (p => `${p.icon} ${p.titel}`)(Q.phasen.find(p => p.id === pid));
+    zeige();
+
+    function zeige() {
+      const f = fragen[st.i];
+      const multi = f.typ === 'multi';
+      let h = `<div class="card"><div class="meta"><span>${esc(titel)}</span><span>Frage ${st.i+1} / ${fragen.length}</span></div>
+        <h2 style="margin-top:10px">${esc(f.frage)}</h2>${multi ? '<div class="lvl">Mehrere Antworten möglich</div>' : ''}
+        <div class="opts">`;
+      shuffleIdx(f).forEach(i => h += `<label class="opt" data-i="${i}"><input type="${multi?'checkbox':'radio'}" name="a" value="${i}"><span>${esc(f.optionen[i])}</span></label>`);
+      h += `</div><div id="fb"></div><div class="row"><button class="btn" id="ok" disabled>Prüfen</button><button class="btn sec" id="abbr">Abbrechen</button></div></div>`;
+      app.innerHTML = h;
+      const ok = document.getElementById('ok');
+      app.querySelectorAll('input').forEach(x => x.onchange = () => ok.disabled = !app.querySelector('input:checked'));
+      document.getElementById('abbr').onclick = home;
+      ok.onclick = () => pruefe(f, ok);
+    }
+    function shuffleIdx(f) { const idx = f.optionen.map((_, i) => i); return f.typ === 'wahrfalsch' ? idx : shuffle(idx); }
+
+    function pruefe(f, ok) {
+      const gew = [...app.querySelectorAll('input:checked')].map(x => +x.value).sort();
+      const soll = f.richtig.slice().sort();
+      const korrekt = gew.length === soll.length && gew.every((v, k) => v === soll[k]);
+      app.querySelectorAll('.opt').forEach(l => {
+        const i = +l.dataset.i; l.querySelector('input').disabled = true;
+        if (soll.includes(i)) l.classList.add('ok'); else if (gew.includes(i)) l.classList.add('ko');
+      });
+      if (korrekt) {
+        st.richtig++; st.serie++;
+        const p = 10 + (st.serie >= 3 ? 5 : 0);
+        st.punkte += p; S.punkte += p; S.geloest[f.id] = true; save(); setScore();
+      } else st.serie = 0;
+      let tool = '';
+      if (f.hilfsmittel) tool = f.hilfsmittel.url
+        ? `<a class="tool" href="${esc(f.hilfsmittel.url)}" target="_blank" rel="noopener">📎 Hilfsmittel: ${esc(f.hilfsmittel.titel)}</a>`
+        : `<span class="tool wip">📎 Hilfsmittel «${esc(f.hilfsmittel.titel)}» – in Erarbeitung</span>`;
+      document.getElementById('fb').innerHTML = `<div class="fb ${korrekt?'':'bad'}"><strong>${korrekt ? (st.serie>=3?'🔥 Richtig – Serienbonus!':'✅ Richtig!') : '❌ Leider nicht.'}</strong><br>${esc(f.erklaerung)}<br>${tool}</div>`;
+      ok.disabled = false;
+      ok.textContent = st.i < fragen.length - 1 ? 'Weiter' : 'Auswertung';
+      ok.onclick = () => { st.i++; st.i < fragen.length ? zeige() : ende(); };
+    }
+
+    function ende() {
+      const quote = st.richtig / fragen.length;
+      const msg = quote === 1 ? '🏆 Perfekt! Du bist ein Daten-Profi.' : quote >= .6 ? '👍 Gut gemacht – weiter so!' : '🌱 Guter Start – jede Runde macht dich daten-fitter.';
+      app.innerHTML = `<div class="card"><h2>${msg}</h2>
+        <p>${st.richtig} von ${fragen.length} richtig · +${st.punkte} Punkte</p>
+        <div class="row"><button class="btn" id="nochmal">Nochmals</button><button class="btn sec" id="heim">Zur Übersicht</button></div></div>`;
+      document.getElementById('nochmal').onclick = () => runde(pid);
+      document.getElementById('heim').onclick = home;
+    }
+  }
+
+  // ---- Entscheidungsbaum ----
+  function baum(id) {
+    const b = Q.baeume.find(x => x.id === id), pfad = [];
+    schritt(b.start);
+    function schritt(kid) {
+      const k = b.knoten[kid];
+      let h = `<div class="card"><div class="meta"><span>🧭 Entscheidungsbaum</span></div><h2 style="margin-top:10px">${esc(b.titel)}</h2>`;
+      if (pfad.length) h += `<div class="path">${pfad.map(esc).join(' → ')}</div>`;
+      if (k.ergebnis) {
+        h += `<div class="tree-res">${esc(k.ergebnis)}</div><div class="row"><button class="btn" id="neu">Neu starten</button><button class="btn sec" id="heim">Zur Übersicht</button></div></div>`;
+        app.innerHTML = h;
+        document.getElementById('neu').onclick = () => baum(id);
+      } else {
+        h += `<p>${esc(k.frage)}</p><div class="row"><button class="btn" id="ja">Ja</button><button class="btn" id="nein">Nein</button><button class="btn sec" id="heim">Abbrechen</button></div></div>`;
+        app.innerHTML = h;
+        document.getElementById('ja').onclick = () => { pfad.push('Ja'); schritt(k.ja); };
+        document.getElementById('nein').onclick = () => { pfad.push('Nein'); schritt(k.nein); };
+      }
+      document.getElementById('heim').onclick = home;
+    }
+  }
+
+  home();
+})();
+</script>
+</body>
+</html>
